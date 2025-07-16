@@ -269,11 +269,13 @@
 
         // Preload object images from /Object Sprites
         const objectSpriteFilenames = [
-            'Object1.png',
-            'Object2.png',
-            'Object3.png',
-            'Object4.png',
-            'Object5.png'
+            'Boo.png',
+            'BulletBill.png',
+            'Elite1.png',
+            'Elite2.png',
+            'Elite3.png',
+            'Goomba.png',
+            'Koopa.png'
         ]; // Add or update filenames as needed
         const objectImages = objectSpriteFilenames.map(filename => {
             const img = new Image();
@@ -487,14 +489,9 @@
                 ctx.fillStyle = '#81C784';
             });
 
-            // Draw obstacles (brown rocks)
+            // Draw obstacles (object PNGs)
             obstacles.forEach(obstacle => {
-                ctx.save();
-                ctx.fillStyle = '#8B4513';
-                ctx.beginPath();
-                ctx.arc(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2, obstacle.width/2, 0, 2*Math.PI);
-                ctx.fill();
-                ctx.restore();
+                obstacle.draw();
             });
 
             // Draw player (upgraded sprite)
