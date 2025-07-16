@@ -240,11 +240,14 @@
         let clouds = [];
         let ground = [];
 
-        // Initialize ground segments
-        for (let i = 0; i < 20; i++) {
+        // Initialize ground segments (track) to cover at least 2x the canvas width for pre-rendering
+        const TRACK_SEGMENT_WIDTH = 50;
+        const TRACK_SEGMENT_COUNT = Math.ceil((canvas.width * 2) / TRACK_SEGMENT_WIDTH);
+        ground = [];
+        for (let i = 0; i < TRACK_SEGMENT_COUNT; i++) {
             ground.push({
-                x: i * 50,
-                width: 50
+                x: i * TRACK_SEGMENT_WIDTH,
+                width: TRACK_SEGMENT_WIDTH
             });
         }
 
@@ -448,13 +451,17 @@
             // Update clouds
             clouds.forEach(cloud => cloud.update());
 
-            // Update ground
+            // Update ground (track)
             ground.forEach(segment => {
                 segment.x -= gameSpeed;
-                if (segment.x + segment.width < 0) {
-                    segment.x = ground[ground.length - 1].x + segment.width;
-                }
             });
+            // Recycle segments that have left the view to the rightmost position
+            while (ground.length && ground[0].x + ground[0].width < 0) {
+                const last = ground[ground.length - 1];
+                const seg = ground.shift();
+                seg.x = last.x + last.width;
+                ground.push(seg);
+            }
 
             // Draw everything
             draw();
@@ -480,13 +487,32 @@
                 ctx.restore();
             });
 
-            // Draw ground (green grass)
-            ctx.fillStyle = '#81C784';
+            // Draw ground (track) with color that changes as player advances
+            // Color will shift from green to blue to purple as score increases
+            const progress = Math.min(1, score / 10000); // 0 to 1
+            function lerpColor(a, b, t) {
+                return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
+            }
+            // Green -> Blue -> Purple
+            let color1 = [129, 199, 132]; // #81C784
+            let color2 = [33, 150, 243]; // #2196F3
+            let color3 = [156, 39, 176]; // #9C27B0
+            let trackColor;
+            if (progress < 0.5) {
+                trackColor = lerpColor(color1, color2, progress * 2);
+            } else {
+                trackColor = lerpColor(color2, color3, (progress - 0.5) * 2);
+            }
+            let borderColor = '#388E3C';
+
             ground.forEach(segment => {
-                ctx.fillRect(segment.x, GROUND_Y + 40, segment.width, 8);
-                ctx.fillStyle = '#388E3C';
-                ctx.fillRect(segment.x, GROUND_Y + 48, segment.width, 4);
-                ctx.fillStyle = '#81C784';
+                // Only draw if in or near view
+                if (segment.x + segment.width > 0 && segment.x < canvas.width) {
+                    ctx.fillStyle = trackColor;
+                    ctx.fillRect(segment.x, GROUND_Y + 40, segment.width, 8);
+                    ctx.fillStyle = borderColor;
+                    ctx.fillRect(segment.x, GROUND_Y + 48, segment.width, 4);
+                }
             });
 
             // Draw obstacles (object PNGs)
