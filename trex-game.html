@@ -20,7 +20,7 @@
             position: relative;
             background: linear-gradient(120deg, #fff 60%, #e3f0ff 100%);
             border-radius: 16px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+            box-shadow: 0 4px 24px rgba(76,175,80,0.12);
             padding: 24px;
         }
 
@@ -243,175 +243,41 @@
             });
         }
 
-        // Character sprite drawing functions (upgraded 8-bit representations)
-        const drawCharacterSprite = (charId, x, y, size = 40, context = ctx) => {
-            // Use context parameter for offscreen drawing
-            const char = characters.find(c => c.id === charId);
-            switch(charId) {
-                case 'trex':
-                    // T-Rex: green body, tail, head, legs, eye
+        // Preload character images
+        const characterImages = {};
+        characters.forEach(char => {
+            const img = new Image();
+            // Use 'T-Rex.png' for T-Rex, otherwise use lowercase id
+            if (char.id === 'trex') {
+                img.src = 'Character Sprites/T-Rex.png';
+            } else {
+                img.src = `Character Sprites/${char.id}.png`;
+            }
+            characterImages[char.id] = img;
+        });
+
+        // Character sprite drawing function using PNGs
+        const drawCharacterSprite = (charId, x, y, size = 40, context = ctx, locked = false) => {
+            const img = characterImages[charId];
+            if (img && img.complete && img.naturalWidth > 0) {
+                if (locked) {
+                    context.save();
+                    context.globalAlpha = 0.4;
+                    context.drawImage(img, x, y, size, size);
+                    context.globalAlpha = 1.0;
                     context.fillStyle = '#535353';
-                    context.fillRect(x + size*0.1, y + size*0.3, size*0.6, size*0.4); // body
-                    context.fillRect(x + size*0.6, y + size*0.4, size*0.3, size*0.2); // tail
-                    context.fillRect(x + size*0.2, y + size*0.1, size*0.4, size*0.3); // head
-                    context.fillStyle = '#222';
-                    context.fillRect(x + size*0.5, y + size*0.18, size*0.08, size*0.08); // eye
-                    context.fillStyle = '#535353';
-                    context.fillRect(x + size*0.18, y + size*0.7, size*0.12, size*0.18); // leg1
-                    context.fillRect(x + size*0.5, y + size*0.7, size*0.12, size*0.18); // leg2
-                    break;
-                case 'mario':
-                    // Mario: red cap, face, blue body, brown shoes
-                    context.fillStyle = '#E52521';
-                    context.fillRect(x + size*0.2, y + size*0.1, size*0.6, size*0.18); // cap
-                    context.fillStyle = '#FDB8A0';
-                    context.fillRect(x + size*0.3, y + size*0.28, size*0.4, size*0.22); // face
-                    context.fillStyle = '#1991FF';
-                    context.fillRect(x + size*0.25, y + size*0.5, size*0.5, size*0.28); // body
-                    context.fillStyle = '#8B4513';
-                    context.fillRect(x + size*0.3, y + size*0.78, size*0.12, size*0.12); // shoe1
-                    context.fillRect(x + size*0.58, y + size*0.78, size*0.12, size*0.12); // shoe2
-                    break;
-                case 'luigi':
-                    // Luigi: green cap, face, blue body, brown shoes
-                    context.fillStyle = '#049C04';
-                    context.fillRect(x + size*0.2, y + size*0.1, size*0.6, size*0.18); // cap
-                    context.fillStyle = '#FDB8A0';
-                    context.fillRect(x + size*0.3, y + size*0.28, size*0.4, size*0.22); // face
-                    context.fillStyle = '#1991FF';
-                    context.fillRect(x + size*0.25, y + size*0.5, size*0.5, size*0.28); // body
-                    context.fillStyle = '#8B4513';
-                    context.fillRect(x + size*0.3, y + size*0.78, size*0.12, size*0.12); // shoe1
-                    context.fillRect(x + size*0.58, y + size*0.78, size*0.12, size*0.12); // shoe2
-                    break;
-                case 'sonic':
-                    // Sonic: blue body, spikes, tan face, red shoes
-                    context.fillStyle = '#1991FF';
-                    context.fillRect(x + size*0.2, y + size*0.2, size*0.6, size*0.5); // body
-                    context.fillRect(x + size*0.1, y + size*0.1, size*0.2, size*0.2); // spike1
-                    context.fillRect(x + size*0.7, y + size*0.1, size*0.2, size*0.2); // spike2
-                    context.fillStyle = '#FDB8A0';
-                    context.fillRect(x + size*0.35, y + size*0.15, size*0.3, size*0.18); // face
-                    context.fillStyle = '#E52521';
-                    context.fillRect(x + size*0.3, y + size*0.7, size*0.12, size*0.12); // shoe1
-                    context.fillRect(x + size*0.58, y + size*0.7, size*0.12, size*0.12); // shoe2
-                    break;
-                case 'link':
-                    // Link: green hat, face, tunic, boots
-                    context.fillStyle = '#01A651';
-                    context.fillRect(x + size*0.2, y + size*0.1, size*0.6, size*0.18); // hat
-                    context.fillStyle = '#FDB8A0';
-                    context.fillRect(x + size*0.3, y + size*0.28, size*0.4, size*0.22); // face
-                    context.fillStyle = '#8B4513';
-                    context.fillRect(x + size*0.25, y + size*0.5, size*0.5, size*0.28); // tunic
-                    context.fillRect(x + size*0.3, y + size*0.78, size*0.12, size*0.12); // boot1
-                    context.fillRect(x + size*0.58, y + size*0.78, size*0.12, size*0.12); // boot2
-                    break;
-                case 'pikachu':
-                    // Pikachu: yellow body, ears, tail, cheeks
-                    context.fillStyle = '#FFD700';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // body
-                    context.fillRect(x, y, size*0.18, size*0.4); // ear1
-                    context.fillRect(x + size*0.82, y, size*0.18, size*0.4); // ear2
-                    context.fillRect(x + size*0.8, y + size*0.5, size*0.18, size*0.18); // tail
-                    context.fillStyle = '#E52521';
-                    context.beginPath();
-                    context.arc(x + size*0.32, y + size*0.5, size*0.07, 0, 2*Math.PI);
-                    context.arc(x + size*0.68, y + size*0.5, size*0.07, 0, 2*Math.PI);
-                    context.fill();
-                    context.fillStyle = '#222';
-                    context.beginPath();
-                    context.arc(x + size*0.4, y + size*0.38, size*0.06, 0, 2*Math.PI);
-                    context.arc(x + size*0.6, y + size*0.38, size*0.06, 0, 2*Math.PI);
-                    context.fill();
-                    break;
-                case 'kirby':
-                    // Kirby: pink body, feet, eyes
-                    context.fillStyle = '#FFB3D9';
-                    context.beginPath();
-                    context.arc(x + size*0.5, y + size*0.5, size*0.25, 0, 2*Math.PI);
-                    context.fill();
-                    context.fillStyle = '#E52521';
-                    context.fillRect(x + size*0.32, y + size*0.7, size*0.12, size*0.12); // foot1
-                    context.fillRect(x + size*0.56, y + size*0.7, size*0.12, size*0.12); // foot2
-                    context.fillStyle = '#222';
-                    context.beginPath();
-                    context.arc(x + size*0.44, y + size*0.48, size*0.05, 0, 2*Math.PI);
-                    context.arc(x + size*0.56, y + size*0.48, size*0.05, 0, 2*Math.PI);
-                    context.fill();
-                    break;
-                case 'yoshi':
-                    // Yoshi: green body, white belly, orange shoes
-                    context.fillStyle = '#43B047';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // body
-                    context.fillStyle = '#fff';
-                    context.fillRect(x + size*0.35, y + size*0.5, size*0.3, size*0.18); // belly
-                    context.fillStyle = '#FF6B00';
-                    context.fillRect(x + size*0.3, y + size*0.78, size*0.12, size*0.12); // shoe1
-                    context.fillRect(x + size*0.58, y + size*0.78, size*0.12, size*0.12); // shoe2
-                    break;
-                case 'bowser':
-                    // Bowser: orange body, green shell, spikes
-                    context.fillStyle = '#FF6B00';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // body
-                    context.fillStyle = '#01A651';
-                    context.fillRect(x + size*0.35, y + size*0.18, size*0.3, size*0.18); // shell
-                    context.fillStyle = '#fff';
-                    context.fillRect(x + size*0.25, y + size*0.12, size*0.08, size*0.08); // spike1
-                    context.fillRect(x + size*0.67, y + size*0.12, size*0.08, size*0.08); // spike2
-                    break;
-                case 'peach':
-                    // Peach: pink dress, yellow hair, crown
-                    context.fillStyle = '#FFB3BA';
-                    context.fillRect(x + size*0.3, y + size*0.3, size*0.4, size*0.5); // dress
-                    context.fillStyle = '#FFD700';
-                    context.fillRect(x + size*0.38, y + size*0.18, size*0.24, size*0.18); // hair
-                    context.fillRect(x + size*0.45, y + size*0.1, size*0.1, size*0.08); // crown
-                    break;
-                case 'donkeykong':
-                    // DK: brown body, face, tie
-                    context.fillStyle = '#8B4513';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // body
-                    context.fillStyle = '#FDB8A0';
-                    context.fillRect(x + size*0.35, y + size*0.18, size*0.3, size*0.18); // face
-                    context.fillStyle = '#E52521';
-                    context.fillRect(x + size*0.48, y + size*0.5, size*0.08, size*0.18); // tie
-                    break;
-                case 'samus':
-                    // Samus: orange suit, green visor
-                    context.fillStyle = '#FF6600';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // suit
-                    context.fillStyle = '#466D1D';
-                    context.fillRect(x + size*0.38, y + size*0.18, size*0.24, size*0.18); // visor
-                    break;
-                case 'megaman':
-                    // Mega Man: blue suit, helmet, face
-                    context.fillStyle = '#0099FF';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // suit
-                    context.fillRect(x + size*0.3, y + size*0.18, size*0.4, size*0.18); // helmet
-                    context.fillStyle = '#FDB8A0';
-                    context.fillRect(x + size*0.38, y + size*0.38, size*0.24, size*0.18); // face
-                    break;
-                case 'pacman':
-                    // Pac-Man: yellow circle, mouth
-                    context.fillStyle = '#FFD700';
-                    context.beginPath();
-                    context.arc(x + size*0.5, y + size*0.5, size*0.22, Math.PI/6, 11*Math.PI/6);
-                    context.lineTo(x + size*0.5, y + size*0.5);
-                    context.fill();
-                    break;
-                case 'masterchief':
-                    // Master Chief: green armor, visor
-                    context.fillStyle = '#466D1D';
-                    context.fillRect(x + size*0.2, y + size*0.3, size*0.6, size*0.5); // armor
-                    context.fillStyle = '#FFD700';
-                    context.fillRect(x + size*0.38, y + size*0.18, size*0.24, size*0.18); // visor
-                    break;
-                default:
-                    // Generic character shape
-                    context.fillStyle = char.color || '#535353';
-                    context.fillRect(x + size * 0.1, y + size * 0.1, size * 0.8, size * 0.8);
-                    break;
+                    context.font = 'bold 32px Arial';
+                    context.textAlign = 'center';
+                    context.textBaseline = 'middle';
+                    context.fillText('?', x + size/2, y + size/2);
+                    context.restore();
+                } else {
+                    context.drawImage(img, x, y, size, size);
+                }
+            } else {
+                // Fallback: draw a placeholder
+                context.fillStyle = '#ccc';
+                context.fillRect(x, y, size, size);
             }
         };
 
@@ -665,15 +531,7 @@
                 sprite.height = 60;
                 const spriteCtx = sprite.getContext('2d');
                 spriteCtx.imageSmoothingEnabled = false;
-                if (isUnlocked) {
-                    drawCharacterSprite(char.id, 10, 10, 40, spriteCtx);
-                } else {
-                    spriteCtx.fillStyle = '#535353';
-                    spriteCtx.font = 'bold 32px Arial';
-                    spriteCtx.textAlign = 'center';
-                    spriteCtx.textBaseline = 'middle';
-                    spriteCtx.fillText('?', 30, 30);
-                }
+                drawCharacterSprite(char.id, 10, 10, 40, spriteCtx, !isUnlocked);
 
                 const name = document.createElement('div');
                 name.style.marginTop = '10px';
