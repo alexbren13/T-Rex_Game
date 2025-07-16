@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dino Run - Multi-Character Edition</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f7f7f7;
+            font-family: Arial, sans-serif;
+        }
+
+        #gameContainer {
+            position: relative;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        canvas {
+            border: 2px solid #535353;
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        .menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255,255,255,0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .menu h1 {
+            font-size: 48px;
+            margin-bottom: 30px;
+            color: #535353;
+            text-align: center;
+        }
+
+        .menu-button {
+            padding: 15px 40px;
+            font-size: 20px;
+            margin: 10px;
+            background-color: #535353;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .menu-button:hover {
+            background-color: #333;
+        }
+
+        .character-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .character-card {
+            text-align: center;
+            padding: 15px;
+            border: 2px solid #535353;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+            background-color: white;
+        }
+
+        .character-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .character-card.locked {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #f0f0f0;
+        }
+
+        .character-card.selected {
+            border-color: #4CAF50;
+            background-color: #e8f5e9;
+        }
+
+        .character-sprite {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto;
+            background-color: #535353;
+            image-rendering: pixelated;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+
+        .score-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 20px;
+            color: #535353;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        
+        <div id="mainMenu" class="menu">
+            <h1>DINO RUN</h1>
+            <button class="menu-button" onclick="startGame()">PLAY</button>
+            <button class="menu-button" onclick="showCharacterSelect()">SELECT CHARACTER</button>
+            <div style="margin-top: 20px; color: #666;">
+                Total Score: <span id="totalScore">0</span>
+            </div>
+        </div>
+
+        <div id="characterSelect" class="menu hidden">
+            <button class="back-button menu-button" onclick="showMainMenu()">Back</button>
+            <h1>SELECT CHARACTER</h1>
+            <div class="character-grid" id="characterGrid"></div>
+        </div>
+
+        <div id="gameOverMenu" class="menu hidden">
+            <h1>GAME OVER</h1>
+            <div style="font-size: 24px; margin-bottom: 20px;">
+                Score: <span id="finalScore">0</span>
+            </div>
+            <button class="menu-button" onclick="startGame()">PLAY AGAIN</button>
+            <button class="menu-button" onclick="showMainMenu()">MAIN MENU</button>
+        </div>
+
+        <div class="score-display hidden" id="gameScore">
+            Score: <span id="currentScore">0</span>
+        </div>
+    </div>
+
+    <script>
+        // Game Constants
+        const GRAVITY = 0.6;
+        const JUMP_SPEED = -12;
+        const GROUND_Y = 300;
+        const GAME_SPEED_INCREMENT = 0.001;
+        const OBSTACLE_SPAWN_MIN = 1000;
+        const OBSTACLE_SPAWN_MAX = 2000;
+
+        // Canvas setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        // Game state
+        let gameRunning = false;
+        let gameSpeed = 6;
+        let score = 0;
+        let highScore = 0;
+        let totalScore = parseInt(localStorage.getItem('totalScore') || '0');
+        let selectedCharacter = localStorage.getItem('selectedCharacter') || 'trex';
+        let unlockedCharacters = JSON.parse(localStorage.getItem('unlockedCharacters') || '["trex"]');
+
+        // Character definitions with unlock requirements
+        const characters = [
+            { id: 'trex', name: 'T-Rex', unlockScore: 0, color: '#535353' },
+            { id: 'mario', name: 'Mario', unlockScore: 100, color: '#E52521' },
+            { id: 'luigi', name: 'Luigi', unlockScore: 200, color: '#049C04' },
+            { id: 'sonic', name: 'Sonic', unlockScore: 500, color: '#1991FF' },
+            { id: 'link', name: 'Link', unlockScore: 750, color: '#01A651' },
+            { id: 'pikachu', name: 'Pikachu', unlockScore: 1000, color: '#FFD700' },
+            { id: 'kirby', name: 'Kirby', unlockScore: 1500, color: '#FFB3D9' },
+            { id: 'yoshi', name: 'Yoshi', unlockScore: 2000, color: '#43B047' },
+            { id: 'bowser', name: 'Bowser', unlockScore: 2500, color: '#FF6B00' },
+            { id: 'peach', name: 'Peach', unlockScore: 3000, color: '#FFB3BA' },
+            { id: 'donkeykong', name: 'DK', unlockScore: 3500, color: '#8B4513' },
+            { id: 'samus', name: 'Samus', unlockScore: 4000, color: '#FF6600' },
+            { id: 'megaman', name: 'Mega Man', unlockScore: 5000, color: '#0099FF' },
+            { id: 'pacman', name: 'Pac-Man', unlockScore: 6000, color: '#FFD700' },
+            { id: 'masterchief', name: 'Master Chief', unlockScore: 7500, color: '#466D1D' }
+        ];
+
+        // Player object
+        const player = {
+            x: 100,
+            y: GROUND_Y,
+            width: 40,
+            height: 40,
+            velocityY: 0,
+            jumping: false,
+            character: selectedCharacter
+        };
+
+        // Game objects arrays
+        let obstacles = [];
+        let clouds = [];
+        let ground = [];
+
+        // Initialize ground segments
+        for (let i = 0; i < 20; i++) {
+            ground.push({
+                x: i * 50,
+                width: 50
+            });
+        }
+
+        // Character sprite drawing functions (simplified 8-bit representations)
+        const drawCharacterSprite = (charId, x, y, size = 40) => {
+            const char = characters.find(c => c.id === charId);
+            ctx.fillStyle = char.color;
+            
+            switch(charId) {
+                case 'trex':
+                    // Simple T-Rex shape
+                    ctx.fillRect(x, y, size * 0.8, size * 0.6);
+                    ctx.fillRect(x + size * 0.2, y - size * 0.2, size * 0.4, size * 0.2);
+                    ctx.fillRect(x, y + size * 0.6, size * 0.3, size * 0.4);
+                    ctx.fillRect(x + size * 0.5, y + size * 0.6, size * 0.3, size * 0.4);
+                    break;
+                
+                case 'mario':
+                    // Mario with cap
+                    ctx.fillStyle = '#E52521';
+                    ctx.fillRect(x + size * 0.2, y, size * 0.6, size * 0.3);
+                    ctx.fillStyle = '#FDB8A0';
+                    ctx.fillRect(x + size * 0.2, y + size * 0.3, size * 0.6, size * 0.3);
+                    ctx.fillStyle = '#E52521';
+                    ctx.fillRect(x + size * 0.1, y + size * 0.6, size * 0.8, size * 0.4);
+                    break;
+                
+                case 'sonic':
+                    // Sonic with spikes
+                    ctx.fillStyle = '#1991FF';
+                    ctx.fillRect(x + size * 0.2, y, size * 0.6, size * 0.8);
+                    // Spikes
+                    for (let i = 0; i < 3; i++) {
+                        ctx.fillRect(x + size * 0.7, y + i * size * 0.2, size * 0.3, size * 0.15);
+                    }
+                    ctx.fillStyle = '#FDB8A0';
+                    ctx.fillRect(x + size * 0.3, y + size * 0.8, size * 0.4, size * 0.2);
+                    break;
+                
+                case 'pikachu':
+                    // Pikachu with ears
+                    ctx.fillStyle = '#FFD700';
+                    ctx.fillRect(x + size * 0.2, y + size * 0.3, size * 0.6, size * 0.5);
+                    // Ears
+                    ctx.fillRect(x, y, size * 0.2, size * 0.4);
+                    ctx.fillRect(x + size * 0.8, y, size * 0.2, size * 0.4);
+                    // Tail
+                    ctx.fillRect(x + size * 0.8, y + size * 0.5, size * 0.3, size * 0.2);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x, y, size * 0.2, size * 0.1);
+                    ctx.fillRect(x + size * 0.8, y, size * 0.2, size * 0.1);
+                    break;
+                
+                default:
+                    // Generic character shape
+                    ctx.fillRect(x + size * 0.1, y + size * 0.1, size * 0.8, size * 0.8);
+                    break;
+            }
+        };
+
+        // Obstacle class
+        class Obstacle {
+            constructor(x) {
+                this.x = x;
+                this.width = 20 + Math.random() * 30;
+                this.height = 40 + Math.random() * 40;
+                this.y = GROUND_Y + 40 - this.height;
+            }
+
+            update() {
+                this.x -= gameSpeed;
+            }
+
+            draw() {
+                ctx.fillStyle = '#535353';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+
+        // Cloud class
+        class Cloud {
+            constructor(x) {
+                this.x = x;
+                this.y = 50 + Math.random() * 100;
+                this.width = 60 + Math.random() * 40;
+                this.height = 20 + Math.random() * 20;
+                this.speed = 0.5 + Math.random() * 0.5;
+            }
+
+            update() {
+                this.x -= this.speed;
+                if (this.x + this.width < 0) {
+                    this.x = canvas.width + Math.random() * 200;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = '#DFDFDF';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.fillRect(this.x + this.width * 0.2, this.y - this.height * 0.3, this.width * 0.6, this.height * 0.5);
+            }
+        }
+
+        // Initialize clouds
+        for (let i = 0; i < 3; i++) {
+            clouds.push(new Cloud(Math.random() * canvas.width));
+        }
+
+        // Input handling
+        let keys = {};
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (gameRunning && (e.key === ' ' || e.key === 'ArrowUp')) {
+                e.preventDefault();
+                jump();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        canvas.addEventListener('click', () => {
+            if (gameRunning) {
+                jump();
+            }
+        });
+
+        function jump() {
+            if (!player.jumping) {
+                player.velocityY = JUMP_SPEED;
+                player.jumping = true;
+            }
+        }
+
+        // Game functions
+        function updatePlayer() {
+            player.velocityY += GRAVITY;
+            player.y += player.velocityY;
+
+            if (player.y >= GROUND_Y) {
+                player.y = GROUND_Y;
+                player.velocityY = 0;
+                player.jumping = false;
+            }
+        }
+
+        function checkCollision(player, obstacle) {
+            return player.x < obstacle.x + obstacle.width &&
+                   player.x + player.width > obstacle.x &&
+                   player.y < obstacle.y + obstacle.height &&
+                   player.y + player.height > obstacle.y;
+        }
+
+        function spawnObstacle() {
+            const lastObstacle = obstacles[obstacles.length - 1];
+            const minDistance = OBSTACLE_SPAWN_MIN + Math.random() * (OBSTACLE_SPAWN_MAX - OBSTACLE_SPAWN_MIN);
+            
+            if (!lastObstacle || canvas.width - lastObstacle.x > minDistance) {
+                obstacles.push(new Obstacle(canvas.width));
+            }
+        }
+
+        function updateGame() {
+            if (!gameRunning) return;
+
+            // Update game speed
+            gameSpeed += GAME_SPEED_INCREMENT;
+
+            // Update score
+            score++;
+            document.getElementById('currentScore').textContent = Math.floor(score / 10);
+
+            // Update player
+            updatePlayer();
+
+            // Update obstacles
+            spawnObstacle();
+            obstacles = obstacles.filter(obstacle => {
+                obstacle.update();
+                
+                // Check collision
+                if (checkCollision(player, obstacle)) {
+                    gameOver();
+                }
+                
+                return obstacle.x + obstacle.width > 0;
+            });
+
+            // Update clouds
+            clouds.forEach(cloud => cloud.update());
+
+            // Update ground
+            ground.forEach(segment => {
+                segment.x -= gameSpeed;
+                if (segment.x + segment.width < 0) {
+                    segment.x = ground[ground.length - 1].x + segment.width;
+                }
+            });
+
+            // Draw everything
+            draw();
+
+            if (gameRunning) {
+                requestAnimationFrame(updateGame);
+            }
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#f7f7f7';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw clouds
+            clouds.forEach(cloud => cloud.draw());
+
+            // Draw ground
+            ctx.fillStyle = '#535353';
+            ground.forEach(segment => {
+                ctx.fillRect(segment.x, GROUND_Y + 40, segment.width, 2);
+            });
+
+            // Draw obstacles
+            obstacles.forEach(obstacle => obstacle.draw());
+
+            // Draw player
+            drawCharacterSprite(player.character, player.x, player.y, player.width);
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            
+            // Update scores
+            totalScore += Math.floor(score / 10);
+            localStorage.setItem('totalScore', totalScore);
+            
+            // Check for newly unlocked characters
+            checkUnlockedCharacters();
+            
+            // Show game over screen
+            document.getElementById('finalScore').textContent = Math.floor(score / 10);
+            document.getElementById('gameOverMenu').classList.remove('hidden');
+            document.getElementById('gameScore').classList.add('hidden');
+        }
+
+        function checkUnlockedCharacters() {
+            let newUnlocks = false;
+            characters.forEach(char => {
+                if (!unlockedCharacters.includes(char.id) && totalScore >= char.unlockScore) {
+                    unlockedCharacters.push(char.id);
+                    newUnlocks = true;
+                }
+            });
+            
+            if (newUnlocks) {
+                localStorage.setItem('unlockedCharacters', JSON.stringify(unlockedCharacters));
+            }
+        }
+
+        // Menu functions
+        function showMainMenu() {
+            document.getElementById('mainMenu').classList.remove('hidden');
+            document.getElementById('characterSelect').classList.add('hidden');
+            document.getElementById('gameOverMenu').classList.add('hidden');
+            document.getElementById('gameScore').classList.add('hidden');
+            document.getElementById('totalScore').textContent = totalScore;
+        }
+
+        function showCharacterSelect() {
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('characterSelect').classList.remove('hidden');
+            renderCharacterGrid();
+        }
+
+        function renderCharacterGrid() {
+            const grid = document.getElementById('characterGrid');
+            grid.innerHTML = '';
+            
+            characters.forEach(char => {
+                const card = document.createElement('div');
+                card.className = 'character-card';
+                
+                const isUnlocked = unlockedCharacters.includes(char.id);
+                const isSelected = char.id === selectedCharacter;
+                
+                if (!isUnlocked) {
+                    card.classList.add('locked');
+                }
+                if (isSelected) {
+                    card.classList.add('selected');
+                }
+                
+                const sprite = document.createElement('canvas');
+                sprite.className = 'character-sprite';
+                sprite.width = 60;
+                sprite.height = 60;
+                const spriteCtx = sprite.getContext('2d');
+                spriteCtx.imageSmoothingEnabled = false;
+                
+                if (isUnlocked) {
+                    drawCharacterSprite(char.id, 10, 10, 40);
+                    // Copy to sprite canvas
+                    spriteCtx.drawImage(canvas, player.x - 10, player.y - 10, 60, 60, 0, 0, 60, 60);
+                } else {
+                    spriteCtx.fillStyle = '#535353';
+                    spriteCtx.fillText('?', 25, 35);
+                }
+                
+                const name = document.createElement('div');
+                name.style.marginTop = '10px';
+                name.textContent = char.name;
+                
+                const requirement = document.createElement('div');
+                requirement.style.fontSize = '12px';
+                requirement.style.color = '#666';
+                requirement.textContent = isUnlocked ? 'Unlocked' : `Requires ${char.unlockScore} points`;
+                
+                card.appendChild(sprite);
+                card.appendChild(name);
+                card.appendChild(requirement);
+                
+                if (isUnlocked) {
+                    card.onclick = () => selectCharacter(char.id);
+                }
+                
+                grid.appendChild(card);
+            });
+        }
+
+        function selectCharacter(charId) {
+            selectedCharacter = charId;
+            player.character = charId;
+            localStorage.setItem('selectedCharacter', charId);
+            renderCharacterGrid();
+        }
+
+        function startGame() {
+            // Reset game state
+            gameRunning = true;
+            gameSpeed = 6;
+            score = 0;
+            obstacles = [];
+            player.y = GROUND_Y;
+            player.velocityY = 0;
+            player.jumping = false;
+            
+            // Hide menus
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('gameOverMenu').classList.add('hidden');
+            document.getElementById('gameScore').classList.remove('hidden');
+            document.getElementById('currentScore').textContent = '0';
+            
+            // Start game loop
+            updateGame();
+        }
+
+        // Initialize
+        showMainMenu();
+        checkUnlockedCharacters();
+    </script>
+</body>
+</html>
