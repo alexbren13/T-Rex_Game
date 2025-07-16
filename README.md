@@ -1,5 +1,5 @@
-This game is an adaptation of the famous Dinosaur jump game, created by Google.
-
+MJ'S DINO RUN
+An adaptation of the famous Dinosaur jump game, created by Google.
 
 Key Features:
 1. Core Game Mechanics
