@@ -160,6 +160,7 @@
         <div id="characterSelect" class="menu hidden">
             <button class="back-button menu-button" onclick="showMainMenu()">Back</button>
             <h1>SELECT CHARACTER</h1>
+            <button class="menu-button" id="mjModeBtn" style="margin-bottom:10px;">MJ Mode</button>
             <div class="character-grid" id="characterGrid"></div>
         </div>
 
@@ -199,6 +200,7 @@
         let totalScore = parseInt(localStorage.getItem('totalScore') || '0');
         let selectedCharacter = localStorage.getItem('selectedCharacter') || 'trex';
         let unlockedCharacters = JSON.parse(localStorage.getItem('unlockedCharacters') || '["trex"]');
+        let mjModeActive = false;
 
         // Character definitions with unlock requirements
         const characters = [
@@ -511,15 +513,23 @@
             document.getElementById('mainMenu').classList.add('hidden');
             document.getElementById('characterSelect').classList.remove('hidden');
             renderCharacterGrid();
+            // Attach MJ Mode button handler
+            const mjBtn = document.getElementById('mjModeBtn');
+            mjBtn.onclick = () => {
+                mjModeActive = true;
+                renderCharacterGrid();
+            };
         }
 
         function renderCharacterGrid() {
             const grid = document.getElementById('characterGrid');
             grid.innerHTML = '';
+            // If MJ Mode is active, all characters are unlocked for this session
+            let displayUnlocked = mjModeActive ? characters.map(c => c.id) : unlockedCharacters;
             characters.forEach(char => {
                 const card = document.createElement('div');
                 card.className = 'character-card';
-                const isUnlocked = unlockedCharacters.includes(char.id);
+                const isUnlocked = displayUnlocked.includes(char.id);
                 const isSelected = char.id === selectedCharacter;
                 if (!isUnlocked) card.classList.add('locked');
                 if (isSelected) card.classList.add('selected');
