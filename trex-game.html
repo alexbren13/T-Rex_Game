@@ -108,6 +108,13 @@
         .character-card.selected {
             border-color: #388E3C;
             background: #e8f5e9;
+            box-shadow: 0 0 0 3px #388E3C, 0 2px 8px rgba(76,175,80,0.18);
+        }
+
+        .character-card.hovered {
+            border-color: #81C784;
+            background: #f1f8e9;
+            box-shadow: 0 0 0 2px #81C784, 0 2px 8px rgba(76,175,80,0.12);
         }
 
         .character-sprite {
@@ -186,6 +193,8 @@
         const GAME_SPEED_INCREMENT = 0.001;
         const OBSTACLE_SPAWN_MIN = 1000;
         const OBSTACLE_SPAWN_MAX = 2000;
+        // Standard sprite size for all characters and obstacles
+        const SPRITE_SIZE = 48;
 
         // Canvas setup
         const canvas = document.getElementById('gameCanvas');
@@ -228,8 +237,8 @@
         const player = {
             x: 100,
             y: GROUND_Y,
-            width: 40,
-            height: 40,
+            width: SPRITE_SIZE,
+            height: SPRITE_SIZE,
             velocityY: 0,
             jumping: false,
             character: selectedCharacter
@@ -240,16 +249,46 @@
         let clouds = [];
         let ground = [];
 
-        // Initialize ground segments (track) to cover at least 2x the canvas width for pre-rendering
+        // Terrain generation: hills, inclines, declines
         const TRACK_SEGMENT_WIDTH = 50;
         const TRACK_SEGMENT_COUNT = Math.ceil((canvas.width * 2) / TRACK_SEGMENT_WIDTH);
-        ground = [];
-        for (let i = 0; i < TRACK_SEGMENT_COUNT; i++) {
-            ground.push({
-                x: i * TRACK_SEGMENT_WIDTH,
-                width: TRACK_SEGMENT_WIDTH
-            });
+        const TRACK_BASE_Y = GROUND_Y + 40;
+        const TRACK_HEIGHT = 8;
+        const TRACK_MAX_HILL = 40; // max height above/below base
+        // Generate a random terrain profile for this run
+        function generateTerrain() {
+            let segments = [];
+            let y = TRACK_BASE_Y;
+            let i = 0;
+            while (i < TRACK_SEGMENT_COUNT) {
+                // Randomly choose next segment type: flat, incline, decline, hill
+                const typeRand = Math.random();
+                let segLen = 2 + Math.floor(Math.random() * 4); // 2-5 segments
+                let slope = 0;
+                if (typeRand < 0.4) {
+                    // Flat
+                    slope = 0;
+                } else if (typeRand < 0.7) {
+                    // Incline
+                    slope = Math.random() * 4 + 2; // 2-6 px per segment
+                } else {
+                    // Decline
+                    slope = -(Math.random() * 4 + 2);
+                }
+                // Clamp so hills don't go too high/low
+                for (let j = 0; j < segLen && i < TRACK_SEGMENT_COUNT; j++, i++) {
+                    y += slope;
+                    y = Math.max(TRACK_BASE_Y - TRACK_MAX_HILL, Math.min(TRACK_BASE_Y + TRACK_MAX_HILL, y));
+                    segments.push({
+                        x: i * TRACK_SEGMENT_WIDTH,
+                        width: TRACK_SEGMENT_WIDTH,
+                        y: y
+                    });
+                }
+            }
+            return segments;
         }
+        ground = generateTerrain();
 
         // Preload character images
         const characterImages = {};
@@ -287,12 +326,13 @@
         });
 
         // Character sprite drawing function using PNGs
-        const drawCharacterSprite = (charId, x, y, size = 40, context = ctx, locked = false) => {
+        const drawCharacterSprite = (charId, x, y, size = SPRITE_SIZE, context = ctx, locked = false) => {
             const img = characterImages[charId];
             if (img && img.complete && img.naturalWidth > 0) {
                 if (locked) {
                     context.save();
                     context.globalAlpha = 0.4;
+                    // Draw image centered if not square
                     context.drawImage(img, x, y, size, size);
                     context.globalAlpha = 1.0;
                     context.fillStyle = '#535353';
@@ -311,19 +351,33 @@
             }
         };
 
-        // Obstacle class using random object sprite
+        // Helper: get ground Y at a given X (for player/obstacle placement)
+        function getGroundYAt(x) {
+            // Find the ground segment covering this x
+            let seg = ground.find(s => x >= s.x && x < s.x + s.width);
+            if (!seg) {
+                // If not found (offscreen), use last segment
+                seg = ground[ground.length - 1];
+            }
+            return seg.y;
+        }
+
+        // Obstacle class using random object sprite, placed on terrain
         class Obstacle {
             constructor(x) {
                 this.x = x;
-                this.width = 40;
-                this.height = 40;
-                this.y = GROUND_Y + 40 - this.height;
+                this.width = SPRITE_SIZE;
+                this.height = SPRITE_SIZE;
+                // Place obstacle on top of ground at its x
+                this.y = getGroundYAt(this.x) - this.height;
                 // Pick a random object image
                 this.sprite = objectImages[Math.floor(Math.random() * objectImages.length)];
             }
 
             update() {
                 this.x -= gameSpeed;
+                // Update y to follow terrain as it moves
+                this.y = getGroundYAt(this.x) - this.height;
             }
 
             draw() {
@@ -399,26 +453,65 @@
             player.velocityY += GRAVITY;
             player.y += player.velocityY;
 
-            if (player.y >= GROUND_Y) {
-                player.y = GROUND_Y;
+            // Player's ground Y depends on current X (simulate running on hills)
+            const playerGroundY = getGroundYAt(player.x) - player.height;
+            if (player.y >= playerGroundY) {
+                player.y = playerGroundY;
                 player.velocityY = 0;
                 player.jumping = false;
             }
         }
 
+        // More forgiving, visually accurate hitboxes
         function checkCollision(player, obstacle) {
-            return player.x < obstacle.x + obstacle.width &&
-                   player.x + player.width > obstacle.x &&
-                   player.y < obstacle.y + obstacle.height &&
-                   player.y + player.height > obstacle.y;
+            // Shrink hitboxes by 20% for both player and obstacle
+            const shrink = 0.2;
+            const pAdj = (player.width * shrink) / 2;
+            const oAdj = (obstacle.width * shrink) / 2;
+            const p = {
+                x: player.x + pAdj,
+                y: player.y + pAdj,
+                w: player.width * (1 - shrink),
+                h: player.height * (1 - shrink)
+            };
+            const o = {
+                x: obstacle.x + oAdj,
+                y: obstacle.y + oAdj,
+                w: obstacle.width * (1 - shrink),
+                h: obstacle.height * (1 - shrink)
+            };
+            return p.x < o.x + o.w &&
+                   p.x + p.w > o.x &&
+                   p.y < o.y + o.h &&
+                   p.y + p.h > o.y;
         }
 
+        // Dynamic obstacle spacing for fair gameplay
+        let nextObstacleX = canvas.width + 100 + Math.random() * 200;
+        function getObstacleGapRange(score) {
+            // Score-based gap logic: easier at start, harder later
+            // Score is divided by 10 for display, so use raw score
+            // Up to 1500 score: very relaxed
+            if (score < 1500) {
+                return { min: 220, max: 400 };
+            } else if (score < 4000) {
+                return { min: 170, max: 320 };
+            } else if (score < 7000) {
+                return { min: 130, max: 250 };
+            } else {
+                return { min: 100, max: 180 };
+            }
+        }
         function spawnObstacle() {
-            const lastObstacle = obstacles[obstacles.length - 1];
-            const minDistance = OBSTACLE_SPAWN_MIN + Math.random() * (OBSTACLE_SPAWN_MAX - OBSTACLE_SPAWN_MIN);
-            
-            if (!lastObstacle || canvas.width - lastObstacle.x > minDistance) {
-                obstacles.push(new Obstacle(canvas.width));
+            // Only spawn if nextObstacleX is in view
+            if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < nextObstacleX) {
+                obstacles.push(new Obstacle(nextObstacleX));
+                // Get gap range based on current score
+                const gapRange = getObstacleGapRange(score);
+                // Add randomness within the range
+                const minGap = gapRange.min;
+                const maxGap = gapRange.max;
+                nextObstacleX += minGap + Math.random() * (maxGap - minGap);
             }
         }
 
@@ -439,12 +532,10 @@
             spawnObstacle();
             obstacles = obstacles.filter(obstacle => {
                 obstacle.update();
-                
                 // Check collision
                 if (checkCollision(player, obstacle)) {
                     gameOver();
                 }
-                
                 return obstacle.x + obstacle.width > 0;
             });
 
@@ -457,9 +548,24 @@
             });
             // Recycle segments that have left the view to the rightmost position
             while (ground.length && ground[0].x + ground[0].width < 0) {
+                // When recycling, generate a new random segment for variety
                 const last = ground[ground.length - 1];
+                let prevY = last.y;
+                // Randomly choose next segment type
+                const typeRand = Math.random();
+                let slope = 0;
+                if (typeRand < 0.4) {
+                    slope = 0;
+                } else if (typeRand < 0.7) {
+                    slope = Math.random() * 4 + 2;
+                } else {
+                    slope = -(Math.random() * 4 + 2);
+                }
+                let newY = prevY + slope;
+                newY = Math.max(TRACK_BASE_Y - TRACK_MAX_HILL, Math.min(TRACK_BASE_Y + TRACK_MAX_HILL, newY));
                 const seg = ground.shift();
                 seg.x = last.x + last.width;
+                seg.y = newY;
                 ground.push(seg);
             }
 
@@ -509,9 +615,9 @@
                 // Only draw if in or near view
                 if (segment.x + segment.width > 0 && segment.x < canvas.width) {
                     ctx.fillStyle = trackColor;
-                    ctx.fillRect(segment.x, GROUND_Y + 40, segment.width, 8);
+                    ctx.fillRect(segment.x, segment.y, segment.width, TRACK_HEIGHT);
                     ctx.fillStyle = borderColor;
-                    ctx.fillRect(segment.x, GROUND_Y + 48, segment.width, 4);
+                    ctx.fillRect(segment.x, segment.y + TRACK_HEIGHT, segment.width, 4);
                 }
             });
 
@@ -574,6 +680,8 @@
                 renderCharacterGrid();
             };
         }
+        // Expose to global for HTML onclick
+        window.showCharacterSelect = showCharacterSelect;
 
         function renderCharacterGrid() {
             const grid = document.getElementById('characterGrid');
@@ -587,15 +695,23 @@
                 const isSelected = char.id === selectedCharacter;
                 if (!isUnlocked) card.classList.add('locked');
                 if (isSelected) card.classList.add('selected');
-
+                // Add hover effect for unlocked cards
+                if (isUnlocked) {
+                    card.addEventListener('mouseenter', () => {
+                        card.classList.add('hovered');
+                    });
+                    card.addEventListener('mouseleave', () => {
+                        card.classList.remove('hovered');
+                    });
+                }
                 // Draw sprite using offscreen canvas
                 const sprite = document.createElement('canvas');
                 sprite.className = 'character-sprite';
-                sprite.width = 60;
-                sprite.height = 60;
+                sprite.width = SPRITE_SIZE + 12;
+                sprite.height = SPRITE_SIZE + 12;
                 const spriteCtx = sprite.getContext('2d');
                 spriteCtx.imageSmoothingEnabled = false;
-                drawCharacterSprite(char.id, 10, 10, 40, spriteCtx, !isUnlocked);
+                drawCharacterSprite(char.id, 6, 6, SPRITE_SIZE, spriteCtx, !isUnlocked);
 
                 const name = document.createElement('div');
                 name.style.marginTop = '10px';
@@ -610,26 +726,24 @@
                 card.appendChild(name);
                 card.appendChild(requirement);
                 if (isUnlocked) {
-                    card.onclick = () => selectCharacter(char.id);
+                    card.onclick = function() {
+                        selectCharacter(char.id);
+                        renderCharacterGrid();
+                    };
                 }
                 grid.appendChild(card);
             });
         }
-
-        function selectCharacter(charId) {
-            selectedCharacter = charId;
-            player.character = charId;
-            localStorage.setItem('selectedCharacter', charId);
-            renderCharacterGrid();
-        }
-
         function startGame() {
             // Reset game state
             gameRunning = true;
             gameSpeed = 6;
             score = 0;
             obstacles = [];
-            player.y = GROUND_Y;
+            // Regenerate terrain for a unique run
+            ground = generateTerrain();
+            nextObstacleX = canvas.width + 100 + Math.random() * 200;
+            player.y = getGroundYAt(player.x) - player.height;
             player.velocityY = 0;
             player.jumping = false;
             
@@ -646,6 +760,16 @@
         // Initialize
         showMainMenu();
         checkUnlockedCharacters();
+
+        // Expose menu functions to global scope for HTML onclick handlers (must be after all function definitions)
+        window.startGame = startGame;
+        window.showCharacterSelect = showCharacterSelect;
+        function selectCharacter(charId) {
+            selectedCharacter = charId;
+            player.character = charId;
+            localStorage.setItem('selectedCharacter', charId);
+        }
+        window.selectCharacter = selectCharacter;
     </script>
 </body>
 </html>
