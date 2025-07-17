@@ -248,6 +248,14 @@
         let obstacles = [];
         let clouds = [];
         let ground = [];
+        let powerUpsOnField = [];
+
+        // Power-up effect state
+        let playerInvincible = false;
+        let invincibleTimer = 0;
+        let slowTimeActive = false;
+        let slowTimer = 0;
+        let playerLives = 0;
 
         // Terrain generation: hills, inclines, declines
         const TRACK_SEGMENT_WIDTH = 50;
@@ -324,6 +332,90 @@
             img.src = `Object Sprites/${filename}`;
             return img;
         });
+
+        // Power-up definitions and images
+        const powerUps = [
+            { id: 'star', name: 'Star', effect: 'invincible', duration: 180 }, // shorter invincibility
+            { id: 'clock', name: 'Clock', effect: 'slow', duration: 400 },
+            { id: 'heart', name: 'Heart', effect: 'extraLife', duration: 0 }
+        ];
+        const powerUpImages = {};
+        powerUps.forEach(pu => {
+            const img = new Image();
+            img.src = `PowerUps/${pu.id}.png`;
+            powerUpImages[pu.id] = img;
+        });
+
+        // PowerUp class
+        class PowerUp {
+            constructor(x) {
+                // Randomly pick a power-up type
+                const pu = powerUps[Math.floor(Math.random() * powerUps.length)];
+                this.id = pu.id;
+                this.effect = pu.effect;
+                this.duration = pu.duration;
+                this.x = x;
+                this.width = SPRITE_SIZE;
+                this.height = SPRITE_SIZE;
+                this.y = getGroundYAt(this.x) - this.height - 10; // float above ground
+                this.sprite = powerUpImages[this.id];
+            }
+            update() {
+                this.x -= gameSpeed;
+                this.y = getGroundYAt(this.x) - this.height - 10;
+            }
+            draw() {
+                if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {
+                    ctx.drawImage(this.sprite, this.x, this.y, this.width, this.height);
+                } else {
+                    ctx.save();
+                    ctx.globalAlpha = 0.9;
+                    // Draw basic clipart for each type
+                    if (this.id === 'star') {
+                        // Draw a simple star
+                        ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                        ctx.rotate(Math.PI/10);
+                        ctx.beginPath();
+                        for (let i = 0; i < 5; i++) {
+                            ctx.lineTo(0, -this.width/2);
+                            ctx.rotate(Math.PI/5);
+                            ctx.lineTo(0, -this.width/4);
+                            ctx.rotate(Math.PI/5);
+                        }
+                        ctx.closePath();
+                        ctx.fillStyle = '#FFD700';
+                        ctx.fill();
+                        ctx.setTransform(1,0,0,1,0,0);
+                    } else if (this.id === 'heart') {
+                        // Draw a simple heart
+                        ctx.beginPath();
+                        let x = this.x + this.width/2, y = this.y + this.height/2, s = this.width/2.5;
+                        ctx.moveTo(x, y + s/2);
+                        ctx.bezierCurveTo(x + s, y - s/2, x + s, y + s, x, y + s);
+                        ctx.bezierCurveTo(x - s, y + s, x - s, y - s/2, x, y + s/2);
+                        ctx.fillStyle = '#E53935';
+                        ctx.fill();
+                    } else if (this.id === 'clock') {
+                        // Draw a simple clock
+                        ctx.beginPath();
+                        ctx.arc(this.x + this.width/2, this.y + this.height/2, this.width/2.2, 0, 2*Math.PI);
+                        ctx.fillStyle = '#2196F3';
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.moveTo(this.x + this.width/2, this.y + this.height/2);
+                        ctx.lineTo(this.x + this.width/2, this.y + this.height/2 - this.width/3);
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(this.x + this.width/2, this.y + this.height/2);
+                        ctx.lineTo(this.x + this.width/2 + this.width/6, this.y + this.height/2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+            }
+        }
 
         // Character sprite drawing function using PNGs
         const drawCharacterSprite = (charId, x, y, size = SPRITE_SIZE, context = ctx, locked = false) => {
@@ -515,11 +607,49 @@
             }
         }
 
+        // Power-up spawn logic (reduced rate)
+        let nextPowerUpX = canvas.width + 800 + Math.random() * 800;
+        function spawnPowerUp() {
+            // Only spawn if nextPowerUpX is in view
+            if (powerUpsOnField.length === 0 || powerUpsOnField[powerUpsOnField.length - 1].x < nextPowerUpX) {
+                powerUpsOnField.push(new PowerUp(nextPowerUpX));
+                // Next power-up appears after 1200-2000px
+                nextPowerUpX += 1200 + Math.random() * 800;
+            }
+        }
+
+        function checkPowerUpCollision(player, powerUp) {
+            // Use same hitbox logic as obstacles
+            const shrink = 0.2;
+            const pAdj = (player.width * shrink) / 2;
+            const puAdj = (powerUp.width * shrink) / 2;
+            const p = {
+                x: player.x + pAdj,
+                y: player.y + pAdj,
+                w: player.width * (1 - shrink),
+                h: player.height * (1 - shrink)
+            };
+            const pu = {
+                x: powerUp.x + puAdj,
+                y: powerUp.y + puAdj,
+                w: powerUp.width * (1 - shrink),
+                h: powerUp.height * (1 - shrink)
+            };
+            return p.x < pu.x + pu.w &&
+                   p.x + p.w > pu.x &&
+                   p.y < pu.y + pu.h &&
+                   p.y + p.h > pu.y;
+        }
+
         function updateGame() {
             if (!gameRunning) return;
 
             // Update game speed
-            gameSpeed += GAME_SPEED_INCREMENT;
+            if (!slowTimeActive) {
+                gameSpeed += GAME_SPEED_INCREMENT;
+            } else {
+                gameSpeed += GAME_SPEED_INCREMENT * 0.3;
+            }
 
             // Update score
             score++;
@@ -534,10 +664,53 @@
                 obstacle.update();
                 // Check collision
                 if (checkCollision(player, obstacle)) {
-                    gameOver();
+                    if (playerInvincible) {
+                        // Ignore collision
+                        return obstacle.x + obstacle.width > 0;
+                    } else if (playerLives > 0) {
+                        playerLives--;
+                        // Remove obstacle and continue
+                        return false;
+                    } else {
+                        gameOver();
+                    }
                 }
                 return obstacle.x + obstacle.width > 0;
             });
+
+            // Power-up logic
+            spawnPowerUp();
+            powerUpsOnField = powerUpsOnField.filter(powerUp => {
+                powerUp.update();
+                if (checkPowerUpCollision(player, powerUp)) {
+                    // Apply effect
+                    if (powerUp.effect === 'invincible') {
+                        playerInvincible = true;
+                        invincibleTimer = powerUp.duration;
+                    } else if (powerUp.effect === 'slow') {
+                        slowTimeActive = true;
+                        slowTimer = powerUp.duration;
+                    } else if (powerUp.effect === 'extraLife') {
+                        playerLives++;
+                    }
+                    return false; // Remove power-up after collection
+                }
+                return powerUp.x + powerUp.width > 0;
+            });
+
+            // Update timers for effects
+            if (playerInvincible) {
+                invincibleTimer--;
+                if (invincibleTimer <= 0) {
+                    playerInvincible = false;
+                }
+            }
+            if (slowTimeActive) {
+                slowTimer--;
+                if (slowTimer <= 0) {
+                    slowTimeActive = false;
+                }
+            }
 
             // Update clouds
             clouds.forEach(cloud => cloud.update());
@@ -626,20 +799,55 @@
                 obstacle.draw();
             });
 
+            // Draw power-ups
+            powerUpsOnField.forEach(powerUp => {
+                powerUp.draw();
+            });
+
             // Draw player (upgraded sprite)
             drawCharacterSprite(player.character, player.x, player.y, player.width, ctx);
+
+            // Draw power-up effect overlays
+            ctx.save();
+            ctx.font = 'bold 22px Segoe UI';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            let effectY = 10;
+            if (playerInvincible) {
+                ctx.fillStyle = '#FFD700';
+                ctx.fillText('Invincible!', 20, effectY);
+                effectY += 28;
+            }
+            if (slowTimeActive) {
+                ctx.fillStyle = '#2196F3';
+                ctx.fillText('Slow Time!', 20, effectY);
+                effectY += 28;
+            }
+            if (playerLives > 0) {
+                ctx.fillStyle = '#E53935';
+                ctx.fillText(`Extra Life: ${playerLives}`, 20, effectY);
+            }
+            ctx.restore();
         }
 
         function gameOver() {
             gameRunning = false;
-            
+
+            // Reset power-up effects
+            playerInvincible = false;
+            invincibleTimer = 0;
+            slowTimeActive = false;
+            slowTimer = 0;
+            playerLives = 0;
+            powerUpsOnField = [];
+
             // Update scores
             totalScore += Math.floor(score / 10);
             localStorage.setItem('totalScore', totalScore);
-            
+
             // Check for newly unlocked characters
             checkUnlockedCharacters();
-            
+
             // Show game over screen
             document.getElementById('finalScore').textContent = Math.floor(score / 10);
             document.getElementById('gameOverMenu').classList.remove('hidden');
