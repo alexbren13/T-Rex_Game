@@ -249,6 +249,7 @@
         let clouds = [];
         let ground = [];
         let powerUpsOnField = [];
+        let particles = [];
 
         // Power-up effect state
         let playerInvincible = false;
@@ -257,46 +258,46 @@
         let slowTimer = 0;
         let playerLives = 0;
 
-        // Terrain generation: hills, inclines, declines
-        const TRACK_SEGMENT_WIDTH = 50;
-        const TRACK_SEGMENT_COUNT = Math.ceil((canvas.width * 2) / TRACK_SEGMENT_WIDTH);
+        // Terrain generation: smooth rolling hills/valleys
         const TRACK_BASE_Y = GROUND_Y + 40;
-        const TRACK_HEIGHT = 8;
-        const TRACK_MAX_HILL = 40; // max height above/below base
-        // Generate a random terrain profile for this run
-        function generateTerrain() {
-            let segments = [];
+        const TRACK_MAX_HILL = 40;
+        const TRACK_LENGTH = canvas.width * 2;
+        const TRACK_POINT_COUNT = 16;
+        let terrainOffset = 0; // For smooth scrolling
+        function generateTerrainPoints() {
+            let points = [];
+            let xStep = TRACK_LENGTH / (TRACK_POINT_COUNT - 1);
             let y = TRACK_BASE_Y;
-            let i = 0;
-            while (i < TRACK_SEGMENT_COUNT) {
-                // Randomly choose next segment type: flat, incline, decline, hill
-                const typeRand = Math.random();
-                let segLen = 2 + Math.floor(Math.random() * 4); // 2-5 segments
-                let slope = 0;
-                if (typeRand < 0.4) {
-                    // Flat
-                    slope = 0;
-                } else if (typeRand < 0.7) {
-                    // Incline
-                    slope = Math.random() * 4 + 2; // 2-6 px per segment
+            for (let i = 0; i < TRACK_POINT_COUNT; i++) {
+                if (i === 0) {
+                    y = TRACK_BASE_Y;
                 } else {
-                    // Decline
-                    slope = -(Math.random() * 4 + 2);
+                    let delta = (Math.random()-0.5) * TRACK_MAX_HILL * 2;
+                    y = Math.max(TRACK_BASE_Y - TRACK_MAX_HILL, Math.min(TRACK_BASE_Y + TRACK_MAX_HILL, y + delta));
                 }
-                // Clamp so hills don't go too high/low
-                for (let j = 0; j < segLen && i < TRACK_SEGMENT_COUNT; j++, i++) {
-                    y += slope;
-                    y = Math.max(TRACK_BASE_Y - TRACK_MAX_HILL, Math.min(TRACK_BASE_Y + TRACK_MAX_HILL, y));
-                    segments.push({
-                        x: i * TRACK_SEGMENT_WIDTH,
-                        width: TRACK_SEGMENT_WIDTH,
-                        y: y
-                    });
-                }
+                points.push({ x: i * xStep, y });
             }
-            return segments;
+            return points;
         }
-        ground = generateTerrain();
+        let terrainPoints = generateTerrainPoints();
+
+        // Helper: interpolate ground Y at any X using Catmull-Rom spline and terrainOffset
+        function getGroundYAt(x) {
+            let pts = terrainPoints;
+            let totalLen = TRACK_LENGTH;
+            let scrollX = x + terrainOffset;
+            if (scrollX < 0) scrollX = 0;
+            if (scrollX > totalLen) scrollX = totalLen;
+            let segLen = totalLen / (pts.length - 1);
+            let i = Math.floor(scrollX / segLen);
+            let t = (scrollX - i * segLen) / segLen;
+            let p0 = pts[Math.max(0, i-1)].y;
+            let p1 = pts[i].y;
+            let p2 = pts[Math.min(pts.length-1, i+1)].y;
+            let p3 = pts[Math.min(pts.length-1, i+2)].y;
+            let y = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2*p0 - 5*p1 + 4*p2 - p3) * t*t + (-p0 + 3*p1 - 3*p2 + p3) * t*t*t);
+            return y;
+        }
 
         // Preload character images
         const characterImages = {};
@@ -443,16 +444,7 @@
             }
         };
 
-        // Helper: get ground Y at a given X (for player/obstacle placement)
-        function getGroundYAt(x) {
-            // Find the ground segment covering this x
-            let seg = ground.find(s => x >= s.x && x < s.x + s.width);
-            if (!seg) {
-                // If not found (offscreen), use last segment
-                seg = ground[ground.length - 1];
-            }
-            return seg.y;
-        }
+        // getGroundYAt is now handled by Catmull-Rom spline above
 
         // Obstacle class using random object sprite, placed on terrain
         class Obstacle {
@@ -513,6 +505,52 @@
             clouds.push(new Cloud(Math.random() * canvas.width));
         }
 
+        // Particle class for dust and sparkles
+        class Particle {
+            constructor(x, y, type = 'dust') {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                if (type === 'dust') {
+                    this.life = 22 + Math.random()*12;
+                    this.maxLife = this.life;
+                    this.size = 10 + Math.random()*14;
+                    this.vx = (Math.random()-0.5) * 2.5;
+                    this.vy = -2.5 + Math.random()*2.5;
+                    // Vary color for more realism
+                    const dustColors = [
+                        'rgba(180,180,180,0.7)',
+                        'rgba(200,200,200,0.5)',
+                        'rgba(160,140,120,0.6)',
+                        'rgba(220,220,220,0.4)'
+                    ];
+                    this.color = dustColors[Math.floor(Math.random()*dustColors.length)];
+                } else {
+                    this.life = 30 + Math.random()*10;
+                    this.maxLife = this.life;
+                    this.size = 8 + Math.random()*6;
+                    this.vx = (Math.random()-0.5) * 2.5;
+                    this.vy = -1.5 + Math.random()*1.5;
+                    this.color = ['#FFD700','#FFF','#E53935','#2196F3'][Math.floor(Math.random()*4)];
+                }
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.15; // gravity
+                this.life--;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life/this.maxLife);
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * (this.life/this.maxLife), 0, 2*Math.PI);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
         // Input handling
         let keys = {};
         document.addEventListener('keydown', (e) => {
@@ -537,17 +575,30 @@
             if (!player.jumping) {
                 player.velocityY = JUMP_SPEED;
                 player.jumping = true;
+                // More detailed dust cloud when jumping
+                for (let i = 0; i < 16; i++) {
+                    particles.push(new Particle(
+                        player.x + player.width/2 + (Math.random()-0.5)*18,
+                        player.y + player.height + Math.random()*8,
+                        'dust'));
+                }
             }
         }
 
-        // Game functions
         function updatePlayer() {
             player.velocityY += GRAVITY;
             player.y += player.velocityY;
-
-            // Player's ground Y depends on current X (simulate running on hills)
             const playerGroundY = getGroundYAt(player.x) - player.height;
             if (player.y >= playerGroundY) {
+                if (player.jumping) {
+                    // More detailed dust cloud when landing
+                    for (let i = 0; i < 20; i++) {
+                        particles.push(new Particle(
+                            player.x + player.width/2 + (Math.random()-0.5)*22,
+                            playerGroundY + player.height + Math.random()*10,
+                            'dust'));
+                    }
+                }
                 player.y = playerGroundY;
                 player.velocityY = 0;
                 player.jumping = false;
@@ -683,6 +734,10 @@
             powerUpsOnField = powerUpsOnField.filter(powerUp => {
                 powerUp.update();
                 if (checkPowerUpCollision(player, powerUp)) {
+                    // Sparkle effect on collect
+                    for (let i = 0; i < 16; i++) {
+                        particles.push(new Particle(powerUp.x + powerUp.width/2, powerUp.y + powerUp.height/2, 'sparkle'));
+                    }
                     // Apply effect
                     if (powerUp.effect === 'invincible') {
                         playerInvincible = true;
@@ -712,35 +767,25 @@
                 }
             }
 
-            // Update clouds
+            // Update particles
+            particles = particles.filter(particle => {
+                particle.update();
+                return particle.life > 0;
+            });
             clouds.forEach(cloud => cloud.update());
 
-            // Update ground (track)
-            ground.forEach(segment => {
-                segment.x -= gameSpeed;
-            });
-            // Recycle segments that have left the view to the rightmost position
-            while (ground.length && ground[0].x + ground[0].width < 0) {
-                // When recycling, generate a new random segment for variety
-                const last = ground[ground.length - 1];
-                let prevY = last.y;
-                // Randomly choose next segment type
-                const typeRand = Math.random();
-                let slope = 0;
-                if (typeRand < 0.4) {
-                    slope = 0;
-                } else if (typeRand < 0.7) {
-                    slope = Math.random() * 4 + 2;
-                } else {
-                    slope = -(Math.random() * 4 + 2);
-                }
-                let newY = prevY + slope;
-                newY = Math.max(TRACK_BASE_Y - TRACK_MAX_HILL, Math.min(TRACK_BASE_Y + TRACK_MAX_HILL, newY));
-                const seg = ground.shift();
-                seg.x = last.x + last.width;
-                seg.y = newY;
-                ground.push(seg);
-            }
+        // Move terrain offset for smooth scrolling
+        terrainOffset += gameSpeed;
+        // Recycle terrain points if offset passes a segment
+        let segLen = TRACK_LENGTH / (TRACK_POINT_COUNT - 1);
+        while (terrainOffset > segLen) {
+            terrainOffset -= segLen;
+            terrainPoints.shift();
+            let last = terrainPoints[terrainPoints.length-1];
+            let delta = (Math.random()-0.5) * TRACK_MAX_HILL * 2;
+            let newY = Math.max(TRACK_BASE_Y - TRACK_MAX_HILL, Math.min(TRACK_BASE_Y + TRACK_MAX_HILL, last.y + delta));
+            terrainPoints.push({ x: last.x + segLen, y: newY });
+        }
 
             // Draw everything
             draw();
@@ -766,33 +811,68 @@
                 ctx.restore();
             });
 
-            // Draw ground (track) with color that changes as player advances
-            // Color will shift from green to blue to purple as score increases
-            const progress = Math.min(1, score / 10000); // 0 to 1
-            function lerpColor(a, b, t) {
-                return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
-            }
-            // Green -> Blue -> Purple
-            let color1 = [129, 199, 132]; // #81C784
-            let color2 = [33, 150, 243]; // #2196F3
-            let color3 = [156, 39, 176]; // #9C27B0
-            let trackColor;
-            if (progress < 0.5) {
-                trackColor = lerpColor(color1, color2, progress * 2);
-            } else {
-                trackColor = lerpColor(color2, color3, (progress - 0.5) * 2);
-            }
-            let borderColor = '#388E3C';
+        // Draw smooth ground (track) with color that changes as player advances
+        const progress = Math.min(1, score / 10000);
+        function lerpColor(a, b, t) {
+            return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
+        }
+        let color1 = [129, 199, 132];
+        let color2 = [33, 150, 243];
+        let color3 = [156, 39, 176];
+        let trackColor;
+        if (progress < 0.5) {
+            trackColor = lerpColor(color1, color2, progress * 2);
+        } else {
+            trackColor = lerpColor(color2, color3, (progress - 0.5) * 2);
+        }
+        let borderColor = '#388E3C';
 
-            ground.forEach(segment => {
-                // Only draw if in or near view
-                if (segment.x + segment.width > 0 && segment.x < canvas.width) {
-                    ctx.fillStyle = trackColor;
-                    ctx.fillRect(segment.x, segment.y, segment.width, TRACK_HEIGHT);
-                    ctx.fillStyle = borderColor;
-                    ctx.fillRect(segment.x, segment.y + TRACK_HEIGHT, segment.width, 4);
-                }
-            });
+        // Draw smooth ground path (high quality)
+        ctx.save();
+        // Draw subtle shadow for depth
+        ctx.beginPath();
+        for (let x = 0; x <= canvas.width; x += 0.5) {
+            let y = getGroundYAt(x);
+            if (x === 0) ctx.moveTo(x, y + 12);
+            else ctx.lineTo(x, y + 12);
+        }
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.lineTo(0, canvas.height);
+        ctx.closePath();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = '#333';
+        ctx.filter = 'blur(2px)';
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.filter = 'none';
+
+        // Draw main ground
+        ctx.beginPath();
+        for (let x = 0; x <= canvas.width; x += 0.5) {
+            let y = getGroundYAt(x);
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.lineTo(0, canvas.height);
+        ctx.closePath();
+        ctx.fillStyle = trackColor;
+        ctx.fill();
+
+        // Draw anti-aliased ground border
+        ctx.beginPath();
+        for (let x = 0; x <= canvas.width; x += 0.5) {
+            let y = getGroundYAt(x);
+            if (x === 0) ctx.moveTo(x, y+8);
+            else ctx.lineTo(x, y+8);
+        }
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#222';
+        ctx.shadowBlur = 2;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
 
             // Draw obstacles (object PNGs)
             obstacles.forEach(obstacle => {
@@ -806,6 +886,11 @@
 
             // Draw player (upgraded sprite)
             drawCharacterSprite(player.character, player.x, player.y, player.width, ctx);
+
+            // Draw particles
+            particles.forEach(particle => {
+                particle.draw(ctx);
+            });
 
             // Draw power-up effect overlays
             ctx.save();
@@ -860,9 +945,12 @@
                 if (!unlockedCharacters.includes(char.id) && totalScore >= char.unlockScore) {
                     unlockedCharacters.push(char.id);
                     newUnlocks = true;
+                    // Sparkle effect on unlock
+                    for (let i = 0; i < 24; i++) {
+                        particles.push(new Particle(canvas.width/2 + (Math.random()-0.5)*120, canvas.height/2 + (Math.random()-0.5)*60, 'sparkle'));
+                    }
                 }
             });
-            
             if (newUnlocks) {
                 localStorage.setItem('unlockedCharacters', JSON.stringify(unlockedCharacters));
             }
@@ -949,18 +1037,24 @@
             score = 0;
             obstacles = [];
             // Regenerate terrain for a unique run
-            ground = generateTerrain();
+            terrainPoints = generateTerrainPoints();
+            terrainOffset = 0;
             nextObstacleX = canvas.width + 100 + Math.random() * 200;
             player.y = getGroundYAt(player.x) - player.height;
             player.velocityY = 0;
             player.jumping = false;
-            
+            powerUpsOnField = [];
+            particles = [];
+            playerInvincible = false;
+            invincibleTimer = 0;
+            slowTimeActive = false;
+            slowTimer = 0;
+            playerLives = 0;
             // Hide menus
             document.getElementById('mainMenu').classList.add('hidden');
             document.getElementById('gameOverMenu').classList.add('hidden');
             document.getElementById('gameScore').classList.remove('hidden');
             document.getElementById('currentScore').textContent = '0';
-            
             // Start game loop
             updateGame();
         }
