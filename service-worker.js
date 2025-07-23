@@ -2,7 +2,7 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open('dino-run-v1').then(cache => {
       return cache.addAll([
-        './trex-game.html',
+        './index.html',
         './manifest.json',
         './icon-192.png',
         './icon-512.png',
@@ -44,6 +44,15 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
+  // Handle navigation requests for PWA launch/offline
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match('./index.html').then(response => {
+        return response || fetch('./index.html');
+      })
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then(response => {
       return response || fetch(event.request);
