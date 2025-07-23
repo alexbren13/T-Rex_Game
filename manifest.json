@@ -1,0 +1,21 @@
+{
+  "name": "MJ's Dino Run",
+  "short_name": "DinoRun",
+  "start_url": "./trex-game.html",
+  "display": "standalone",
+  "background_color": "#e0eafc",
+  "theme_color": "#4CAF50",
+  "description": "Multi-Character Dino Run Game",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

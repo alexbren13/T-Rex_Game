@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Dino Run - Multi-Character Edition</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
     <style>
         body {
             margin: 0;
@@ -157,11 +161,20 @@
         
         <div id="mainMenu" class="menu">
             <h1>MJ's DINO RUN</h1>
-            <button class="menu-button" onclick="startGame()">PLAY</button>
+            <div style="margin-bottom: 18px;">
+                <button class="menu-button" onclick="selectGameMode('endless')">ENDLESS MODE</button>
+                <button class="menu-button" onclick="selectGameMode('adventure')">ADVENTURE MODE</button>
+            </div>
             <button class="menu-button" onclick="showCharacterSelect()">SELECT CHARACTER</button>
             <div style="margin-top: 20px; color: #666;">
                 Total Score: <span id="totalScore">0</span>
             </div>
+        </div>
+
+        <div id="adventureMenu" class="menu hidden">
+            <h1>ADVENTURE MODE</h1>
+            <div id="adventureLevelList"></div>
+            <button class="menu-button" onclick="showMainMenu()">BACK</button>
         </div>
 
         <div id="characterSelect" class="menu hidden">
@@ -186,6 +199,16 @@
     </div>
 
     <script>
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js').then(function(registration) {
+                    // Registration successful
+                }, function(err) {
+                    // Registration failed
+                });
+            });
+        }
         // Game Constants
         const GRAVITY = 0.6;
         const JUMP_SPEED = -12;
@@ -210,6 +233,11 @@
         let selectedCharacter = localStorage.getItem('selectedCharacter') || 'trex';
         let unlockedCharacters = JSON.parse(localStorage.getItem('unlockedCharacters') || '["trex"]');
         let mjModeActive = false;
+        let gameMode = 'endless'; // 'endless' or 'adventure'
+        let currentWorld = 1;
+        let currentLevel = 1;
+        const ADVENTURE_WORLDS = 1; // For now, 1 world
+        const ADVENTURE_LEVELS_PER_WORLD = 3; // For now, 3 levels
 
         // Character definitions with unlock requirements
         const characters = [
@@ -1030,13 +1058,12 @@
                 grid.appendChild(card);
             });
         }
-        function startGame() {
+        function startGame(world = 1, level = 1) {
             // Reset game state
             gameRunning = true;
             gameSpeed = 6;
             score = 0;
             obstacles = [];
-            // Regenerate terrain for a unique run
             terrainPoints = generateTerrainPoints();
             terrainOffset = 0;
             nextObstacleX = canvas.width + 100 + Math.random() * 200;
@@ -1050,13 +1077,51 @@
             slowTimeActive = false;
             slowTimer = 0;
             playerLives = 0;
+            currentWorld = world;
+            currentLevel = level;
             // Hide menus
             document.getElementById('mainMenu').classList.add('hidden');
             document.getElementById('gameOverMenu').classList.add('hidden');
+            document.getElementById('adventureMenu').classList.add('hidden');
             document.getElementById('gameScore').classList.remove('hidden');
             document.getElementById('currentScore').textContent = '0';
             // Start game loop
             updateGame();
+        }
+        // Game mode selection logic
+        function selectGameMode(mode) {
+            gameMode = mode;
+            if (mode === 'endless') {
+                startGame();
+            } else if (mode === 'adventure') {
+                showAdventureMenu();
+            }
+        }
+
+        function showAdventureMenu() {
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('adventureMenu').classList.remove('hidden');
+            renderAdventureLevelList();
+        }
+
+        function renderAdventureLevelList() {
+            const list = document.getElementById('adventureLevelList');
+            list.innerHTML = '';
+            for (let w = 1; w <= ADVENTURE_WORLDS; w++) {
+                const worldDiv = document.createElement('div');
+                worldDiv.style.marginBottom = '12px';
+                worldDiv.innerHTML = `<b>World ${w}</b>`;
+                for (let l = 1; l <= ADVENTURE_LEVELS_PER_WORLD; l++) {
+                    const btn = document.createElement('button');
+                    btn.className = 'menu-button';
+                    btn.textContent = `Level ${l}`;
+                    btn.onclick = () => {
+                        startGame(w, l);
+                    };
+                    worldDiv.appendChild(btn);
+                }
+                list.appendChild(worldDiv);
+            }
         }
 
         // Initialize
@@ -1066,6 +1131,8 @@
         // Expose menu functions to global scope for HTML onclick handlers (must be after all function definitions)
         window.startGame = startGame;
         window.showCharacterSelect = showCharacterSelect;
+        window.selectGameMode = selectGameMode;
+        window.showMainMenu = showMainMenu;
         function selectCharacter(charId) {
             selectedCharacter = charId;
             player.character = charId;
